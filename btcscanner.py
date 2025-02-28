@@ -28,7 +28,7 @@ def generate_all_addresses(private_hex):
     p2pkh = base58.b58encode(b'\x00' + ripemd + hashlib.sha256(hashlib.sha256(b'\x00' + ripemd).digest()).digest()[:4]).decode()
     
     # 2. P2SH (شروع با 3)
-    redeem_script = b'\x00\x14' + hashlib.new('ripemd160', hashlib.sha256(b'\x00\x14' + ripemd).digest())
+    redeem_script = b'\x00\x14' + hashlib.new('ripemd160', hashlib.sha256(b'\x00\x14' + ripemd).digest()).digest()
     p2sh_hash = hashlib.new('ripemd160', hashlib.sha256(redeem_script).digest()).digest()
     p2sh = base58.b58encode(b'\x05' + p2sh_hash + hashlib.sha256(hashlib.sha256(b'\x05' + p2sh_hash).digest()).digest()[:4]).decode()
     
