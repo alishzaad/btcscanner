@@ -24,33 +24,38 @@ def private_to_wif(private_hex):
 def generate_all_addresses(private_hex):
     sk = ecdsa.SigningKey.from_string(bytes.fromhex(private_hex), curve=ecdsa.SECP256k1)
     vk = sk.verifying_key
-    pub_key = b'\x04' + vk.to_string()
+    # تولید کلید عمومی غیر فشرده
+    pub_key_uncompressed = b'\x04' + vk.to_string()
     
-    # 1. P2PKH (شروع با 1)
-    sha_pub = hashlib.sha256(pub_key).digest()
+    # 1. آدرس P2PKH غیر فشرده (Uncompressed - شروع با 1)
+    sha_pub = hashlib.sha256(pub_key_uncompressed).digest()
     ripemd = hashlib.new('ripemd160', sha_pub).digest()
-    p2pkh = base58.b58encode(b'\x00' + ripemd + hashlib.sha256(hashlib.sha256(b'\x00' + ripemd).digest()).digest()[:4]).decode()
+    uncompressed_addr = base58.b58encode(b'\x00' + ripemd +
+                                          hashlib.sha256(hashlib.sha256(b'\x00' + ripemd).digest()).digest()[:4]).decode()
     
-    # 2. P2SH (شروع با 3)
+    # 2. آدرس P2PKH فشرده (Compressed - شروع با 1)
+    y_parity = pub_key_uncompressed[33] % 2
+    pub_key_compressed = bytes([0x02 + y_parity]) + pub_key_uncompressed[1:33]
+    sha_pub_compressed = hashlib.sha256(pub_key_compressed).digest()
+    ripemd_compressed = hashlib.new('ripemd160', sha_pub_compressed).digest()
+    compressed_addr = base58.b58encode(b'\x00' + ripemd_compressed +
+                                        hashlib.sha256(hashlib.sha256(b'\x00' + ripemd_compressed).digest()).digest()[:4]).decode()
+    
+    # 3. آدرس P2SH (شروع با 3)
     redeem_script = b'\x00\x14' + hashlib.new('ripemd160', hashlib.sha256(b'\x00\x14' + ripemd).digest()).digest()
     p2sh_hash = hashlib.new('ripemd160', hashlib.sha256(redeem_script).digest()).digest()
-    p2sh = base58.b58encode(b'\x05' + p2sh_hash + hashlib.sha256(hashlib.sha256(b'\x05' + p2sh_hash).digest()).digest()[:4]).decode()
+    p2sh_addr = base58.b58encode(b'\x05' + p2sh_hash +
+                                 hashlib.sha256(hashlib.sha256(b'\x05' + p2sh_hash).digest()).digest()[:4]).decode()
     
-    # 3. SegWit (Bech32)
-    witness_program = hashlib.new('ripemd160', hashlib.sha256(pub_key).digest()).digest()
-    segwit = bech32.encode('bc', 0, witness_program)
-    
-    # 4. Compressed P2PKH
-    y_parity = pub_key[33] % 2
-    compressed_pub = bytes([0x02 + y_parity]) + pub_key[1:33]
-    compressed_hash = hashlib.new('ripemd160', hashlib.sha256(compressed_pub).digest()).digest()
-    compressed_addr = base58.b58encode(b'\x00' + compressed_hash + hashlib.sha256(hashlib.sha256(b'\x00' + compressed_hash).digest()).digest()[:4]).decode()
+    # 4. آدرس SegWit (Bech32 - شروع با bc1)
+    witness_program = hashlib.new('ripemd160', hashlib.sha256(pub_key_uncompressed).digest()).digest()
+    segwit_addr = bech32.encode('bc', 0, witness_program)
     
     return {
-        'P2PKH': p2pkh,
-        'P2SH': p2sh,
-        'SegWit': segwit,
-        'Compressed': compressed_addr
+        'Uncompressed': uncompressed_addr,
+        'Compressed': compressed_addr,
+        'P2SH': p2sh_addr,
+        'SegWit': segwit_addr
     }
 
 # --- بررسی موجودی با ThreadPool ---
@@ -84,10 +89,11 @@ def main():
             
             # نمایش اطلاعات در ترمینال
             sys.stdout.write("\033[K")  # پاک کردن خط قبلی
-            status = " | ".join([
-                f"WIF: {wif[:6]}...",
-                *[f"{atype}: {addr[:6]}... ({bal if isinstance(bal, int) else bal})" for atype, (addr, bal) in zip(addresses.keys(), balances.items())]
-            ])
+            status_parts = [f"WIF: {wif[:6]}..."]
+            for addr_type, addr in addresses.items():
+                balance = balances.get(addr_type, 0)
+                status_parts.append(f"{addr_type}: {addr[:6]}... ({balance if isinstance(balance, int) else balance})")
+            status = " | ".join(status_parts)
             print(f"\r{status}", end="", flush=True)
             
             # بررسی موجودی و خطاها
