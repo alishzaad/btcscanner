@@ -57,9 +57,10 @@ def check_balance(address):
             timeout=10,
             headers={'User-Agent': 'Mozilla/5.0'}
         )
+        response.raise_for_status()  # بررسی خطاهای HTTP
         return int(response.json().get(address, {}).get('final_balance', 0))
-    except:
-        return 0
+    except requests.exceptions.RequestException as e:
+        return f"Error: {e}"  # بازگرداندن خطا به عنوان رشته
 
 def check_addresses(addresses):
     with ThreadPoolExecutor(max_workers=4) as executor:
@@ -74,15 +75,20 @@ def main():
             wif = private_to_wif(private_hex)
             addresses = generate_all_addresses(private_hex)
             
-            # نمایش WIF Key در حین اسکن
-            sys.stdout.write("\033[K")  # پاک کردن خط قبلی
-            print(f"\rWIF Key: {wif}", end="", flush=True)
-            
+            # بررسی موجودی برای همه آدرس‌ها
             balances = check_addresses(addresses)
             
-            # بررسی موجودی
+            # نمایش اطلاعات در ترمینال
+            sys.stdout.write("\033[K")  # پاک کردن خط قبلی
+            status = " | ".join([
+                f"WIF: {wif[:6]}...",
+                *[f"{atype}: {addr[:6]}... ({bal if isinstance(bal, int) else bal})" for atype, (addr, bal) in zip(addresses.keys(), balances.items())]
+            ])
+            print(f"\r{status}", end="", flush=True)
+            
+            # بررسی موجودی و خطاها
             for addr_type, balance in balances.items():
-                if balance > 0:
+                if isinstance(balance, int) and balance > 0:
                     print("\n\n!!! موجودی یافت شد !!!")
                     print(f"کلید خصوصی (WIF): {wif}")
                     print(f"نوع آدرس: {addr_type}")
@@ -96,6 +102,11 @@ def main():
                         f.write(f"Address: {addresses[addr_type]}\n")
                         f.write(f"Balance: {balance} satoshi\n\n")
                     sys.exit(0)
+                elif isinstance(balance, str):  # نمایش خطاها
+                    print(f"\n\n!!! خطا !!!")
+                    print(f"نوع آدرس: {addr_type}")
+                    print(f"آدرس: {addresses[addr_type]}")
+                    print(f"خطا: {balance}")
                     
     except KeyboardInterrupt:
         print("\n\nعملیات توسط کاربر لغو شد.")
