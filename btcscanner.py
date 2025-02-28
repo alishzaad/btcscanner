@@ -6,6 +6,10 @@ import bech32
 import requests
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from colorama import Fore, Style, init
+
+# Initialize colorama
+init()
 
 # --- توابع تولید آدرس‌ها ---
 def generate_private_key():
@@ -60,7 +64,7 @@ def check_balance(address):
         response.raise_for_status()  # بررسی خطاهای HTTP
         return int(response.json().get(address, {}).get('final_balance', 0))
     except requests.exceptions.RequestException as e:
-        return f"Error: {e}"  # بازگرداندن خطا به عنوان رشته
+        return f"{Fore.RED}Error: {e}{Style.RESET_ALL}"  # نمایش خطا با رنگ قرمز
 
 def check_addresses(addresses):
     with ThreadPoolExecutor(max_workers=4) as executor:
