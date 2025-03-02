@@ -72,26 +72,37 @@ def check_balance(address, retries=3):
             )
             response.raise_for_status()
             return int(response.json().get(address, {}).get('final_balance', 0))
-        
         except requests.exceptions.RequestException as e:
-            print(f"{Fore.RED}Attempt {i+1} failed: {e}{Style.RESET_ALL}")
+            print(f"{Fore.RED}Attempt {i+1} failed for {address}: {e}{Style.RESET_ALL}")
             if i < retries - 1:
                 time.sleep(random.uniform(0.1, 0.2))
-    
-    return f"{Fore.RED}Failed after {retries} retries{Style.RESET_ALL}"
+    # در صورت خطا، به جای خروج مقدار 0 برگردانده می‌شود تا اسکن ادامه یابد.
+    return 0
 
 def check_addresses(addresses):
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    # بررسی آدرس‌ها به صورت همزمان (در مجموع ۴ آدرس برای هر کلید)
+    with ThreadPoolExecutor(max_workers=16) as executor:
         futures = {addr_type: executor.submit(check_balance, addr) for addr_type, addr in addresses.items()}
-        return {addr_type: future.result() for addr_type, future in futures.items()}
+        results = {}
+        for addr_type, future in futures.items():
+            try:
+                results[addr_type] = future.result()
+            except Exception as e:
+                print(f"{Fore.RED}Error checking {addr_type}: {e}{Style.RESET_ALL}")
+                results[addr_type] = 0
+        return results
 
 # --- پردازش کلید خصوصی ---
 def process_key():
-    private_hex = generate_private_key()
-    wif = private_to_wif(private_hex)
-    addresses = generate_all_addresses(private_hex)
-    balances = check_addresses(addresses)
-    return wif, addresses, balances
+    try:
+        private_hex = generate_private_key()
+        wif = private_to_wif(private_hex)
+        addresses = generate_all_addresses(private_hex)
+        balances = check_addresses(addresses)
+        return wif, addresses, balances
+    except Exception as e:
+        print(f"{Fore.RED}Error in process_key: {e}{Style.RESET_ALL}")
+        return None
 
 # --- اجرای اصلی ---
 def main():
@@ -105,34 +116,44 @@ def main():
     """)
     
     total_keys = 0
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    # استفاده از ThreadPoolExecutor با ۴ worker برای تولید ۴ کلید در هر چرخه
+    with ThreadPoolExecutor(max_workers=4) as executor:
         while True:
             start_time = time.time()
-            futures = [executor.submit(process_key) for _ in range(5)]
-            results = [future.result() for future in futures]
+            futures = [executor.submit(process_key) for _ in range(4)]
+            results = []
+            for future in futures:
+                try:
+                    result = future.result()
+                    if result:
+                        results.append(result)
+                except Exception as e:
+                    print(f"{Fore.RED}Error in key processing: {e}{Style.RESET_ALL}")
             
             total_keys += len(results)
             print(f"\nTotal Keys Processed: {total_keys} | Total Addresses Checked: {total_keys * 4}")
             print("-" * 80)
             
-            for wif, addresses, balances in results:
-                summary = [f"WIF: {wif[:6]}..."] + [f"{addr_type[:4]}: {addr[:6]}... ({balances[addr_type]})" for addr_type, addr in addresses.items()]
-                print(" | ".join(summary))
-                
-                for addr_type, balance in balances.items():
-                    if isinstance(balance, int) and balance > 0:
-                        print("\n\n!!! موجودی یافت شد !!!")
-                        print(f"کلید خصوصی (WIF): {wif}")
-                        print(f"نوع آدرس: {addr_type}")
-                        print(f"آدرس: {addresses[addr_type]}")
-                        print(f"موجودی: {balance} ساتوشی")
-                        with open('found.txt', 'a') as f:
-                            f.write(f"WIF Key: {wif}\nAddress Type: {addr_type}\nAddress: {addresses[addr_type]}\nBalance: {balance} satoshi\n\n")
-                        sys.exit(0)
+            for res in results:
+                if res:
+                    wif, addresses, balances = res
+                    summary = [f"WIF: {wif[:6]}..."] + [f"{addr_type[:4]}: {addr[:6]}... ({balances.get(addr_type, 0)})" for addr_type, addr in addresses.items()]
+                    print(" | ".join(summary))
+                    
+                    for addr_type, balance in balances.items():
+                        if isinstance(balance, int) and balance > 0:
+                            print(f"\n\n{Fore.RED}!!! موجودی یافت شد !!!{Style.RESET_ALL}")
+                            print(f"کلید خصوصی (WIF): {wif}")
+                            print(f"نوع آدرس: {addr_type}")
+                            print(f"آدرس: {addresses[addr_type]}")
+                            print(f"موجودی: {balance} ساتوشی")
+                            with open('found.txt', 'a') as f:
+                                f.write(f"WIF Key: {wif}\nAddress Type: {addr_type}\nAddress: {addresses[addr_type]}\nBalance: {balance} satoshi\n\n")
+                            sys.exit(0)
             
             elapsed = time.time() - start_time
-            if elapsed < 1:
-                time.sleep(1 - elapsed)
+            if elapsed < 1.3:
+                time.sleep(1.3 - elapsed)
 
 if __name__ == "__main__":
     main()
