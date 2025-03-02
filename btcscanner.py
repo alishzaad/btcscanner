@@ -80,8 +80,8 @@ def check_balance(address, retries=3):
     return 0
 
 def check_addresses(addresses):
-    # بررسی آدرس‌ها به صورت همزمان (در مجموع ۴ آدرس برای هر کلید)
-    with ThreadPoolExecutor(max_workers=16) as executor:
+    # بررسی آدرس‌ها به صورت همزمان (در مجموع ۴ آدرس برای هر کلید => ۱۲ کیف پول در هر چرخه)
+    with ThreadPoolExecutor(max_workers=12) as executor:
         futures = {addr_type: executor.submit(check_balance, addr) for addr_type, addr in addresses.items()}
         results = {}
         for addr_type, future in futures.items():
@@ -116,11 +116,11 @@ def main():
     """)
     
     total_keys = 0
-    # استفاده از ThreadPoolExecutor با ۴ worker برای تولید ۴ کلید در هر چرخه
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    # استفاده از ThreadPoolExecutor با ۳ worker برای تولید ۳ کلید در هر چرخه
+    with ThreadPoolExecutor(max_workers=3) as executor:
         while True:
             start_time = time.time()
-            futures = [executor.submit(process_key) for _ in range(4)]
+            futures = [executor.submit(process_key) for _ in range(3)]
             results = []
             for future in futures:
                 try:
@@ -152,8 +152,8 @@ def main():
                             sys.exit(0)
             
             elapsed = time.time() - start_time
-            if elapsed < 1.3:
-                time.sleep(1.3 - elapsed)
+            if elapsed < 1:
+                time.sleep(1 - elapsed)
 
 if __name__ == "__main__":
     main()
